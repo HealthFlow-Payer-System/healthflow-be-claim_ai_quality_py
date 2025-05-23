@@ -85,120 +85,123 @@ where ValidityTo is null and (ISJSON(CONVERT (VARCHAR(MAX), JsonExt)) is null or
 
 # PostgreSQL compatible SQL
 POSTGRESQL_MIGRATION_SQL = '''
-DO $$
-DECLARE 
-	CLAIM_STATUS_REJECTED INT := 1;
-	CLAIM_STATUS_ENTERED INT := 2;
-	CLAIM_STATUS_CHECKED INT := 4;
-	CLAIM_STATUS_PROCESSED INT := 8;
-	CLAIM_STATUS_VALUATED INT := 16;
-BEGIN
+-- Update "tblClaimItems"
+UPDATE "tblClaimItems" ci
+SET "JsonExt" = jsonb_set(
+  "JsonExt"::jsonb,
+  '{claim_ai_quality}',
+  jsonb_build_object('ai_result', "ClaimItemStatus"::text)
+)
+WHERE
+  "ValidityTo" IS NULL AND
+  ("JsonExt"::jsonb -> 'claim_ai_quality' ->> 'ai_result') IS NULL;
 
--- Add new claim_ai_quality field to already created JsonExt's for ClaimItems
-UPDATE "tblClaimItems"
-SET "JsonExt" = (CASE 
-    WHEN "JsonExt" IS NULL THEN 
-        json_build_object('claim_ai_quality', json_build_object('ai_result', "ClaimItemStatus"))
-    WHEN "JsonExt"::jsonb ? 'claim_ai_quality' = false THEN 
-        "JsonExt"::jsonb || json_build_object('claim_ai_quality', json_build_object('ai_result', "ClaimItemStatus"))::jsonb
-    ELSE "JsonExt"
-    END)::json
-WHERE "ValidityTo" IS NULL 
-AND ("JsonExt" IS NULL OR ("JsonExt"::jsonb -> 'claim_ai_quality' -> 'ai_result') IS NULL);
+-- Update "tblClaimServices"
+UPDATE "tblClaimServices" cs
+SET "JsonExt" = jsonb_set(
+  "JsonExt"::jsonb,
+  '{claim_ai_quality}',
+  jsonb_build_object('ai_result', "ClaimServiceStatus"::text)
+)
+WHERE
+  "ValidityTo" IS NULL AND
+  ("JsonExt"::jsonb -> 'claim_ai_quality' ->> 'ai_result') IS NULL;
 
--- Add new claim_ai_quality field to already created JsonExt's for ClaimServices
-UPDATE "tblClaimServices"
-SET "JsonExt" = (CASE 
-    WHEN "JsonExt" IS NULL THEN 
-        json_build_object('claim_ai_quality', json_build_object('ai_result', "ClaimServiceStatus"))
-    WHEN "JsonExt"::jsonb ? 'claim_ai_quality' = false THEN 
-        "JsonExt"::jsonb || json_build_object('claim_ai_quality', json_build_object('ai_result', "ClaimServiceStatus"))::jsonb
-    ELSE "JsonExt"
-    END)::json
-WHERE "ValidityTo" IS NULL 
-AND ("JsonExt" IS NULL OR ("JsonExt"::jsonb -> 'claim_ai_quality' -> 'ai_result') IS NULL);
+-- Update "tblClaim" (with literal constants)
+UPDATE "tblClaim" c
+SET "JsonExt" = CASE
+  WHEN c."ClaimStatus" = 1 AND c."ValidityFromReview" IS NOT NULL THEN
+    jsonb_set(c."JsonExt"::jsonb, '{claim_ai_quality}',
+      jsonb_build_object(
+        'was_categorized', true,
+        'request_time', to_char(current_timestamp, 'YYYY-MM-DD"T"HH24:MI:SS'),
+        'response_time', to_char(current_timestamp, 'YYYY-MM-DD"T"HH24:MI:SS')
+      ))
+  WHEN c."ClaimStatus" = 1 AND c."ValidityFromReview" IS NULL THEN
+    jsonb_set(c."JsonExt"::jsonb, '{claim_ai_quality}',
+      jsonb_build_object(
+        'was_categorized', false,
+        'request_time', to_char(current_timestamp, 'YYYY-MM-DD"T"HH24:MI:SS'),
+        'response_time', to_char(current_timestamp, 'YYYY-MM-DD"T"HH24:MI:SS')
+      ))
+  WHEN c."ClaimStatus" = 4 THEN
+    jsonb_set(c."JsonExt"::jsonb, '{claim_ai_quality}',
+      jsonb_build_object(
+        'was_categorized', false,
+        'request_time', 'None',
+        'response_time', 'None'
+      ))
+  WHEN c."ClaimStatus" IN (8, 16) THEN
+    jsonb_set(c."JsonExt"::jsonb, '{claim_ai_quality}',
+      jsonb_build_object(
+        'was_categorized', true,
+        'request_time', to_char(current_timestamp, 'YYYY-MM-DD"T"HH24:MI:SS'),
+        'response_time', to_char(current_timestamp, 'YYYY-MM-DD"T"HH24:MI:SS')
+      ))
+  ELSE c."JsonExt"::jsonb
+END
+WHERE
+  c."ValidityTo" IS NULL AND
+  jsonb_typeof(c."JsonExt"::jsonb) IS NOT NULL AND
+  (c."JsonExt"::jsonb -> 'claim_ai_quality' ->> 'was_categorized') IS NULL;
 
--- Update tblClaim with proper JSON structure
-UPDATE "tblClaim"
-SET "JsonExt" = (CASE 
-    -- Rejected claims with review
-    WHEN "ClaimStatus" = CLAIM_STATUS_REJECTED AND "ValidityFromReview" IS NOT NULL THEN 
-        CASE 
-            WHEN "JsonExt" IS NULL THEN 
-                json_build_object('claim_ai_quality', json_build_object(
-                    'was_categorized', true,
-                    'request_time', CURRENT_TIMESTAMP::text,
-                    'response_time', CURRENT_TIMESTAMP::text
-                ))
-            ELSE 
-                "JsonExt"::jsonb || json_build_object('claim_ai_quality', json_build_object(
-                    'was_categorized', true,
-                    'request_time', CURRENT_TIMESTAMP::text,
-                    'response_time', CURRENT_TIMESTAMP::text
-                ))::jsonb
-        END
-    
-    -- Rejected claims without review
-    WHEN "ClaimStatus" = CLAIM_STATUS_REJECTED AND "ValidityFromReview" IS NULL THEN 
-        CASE 
-            WHEN "JsonExt" IS NULL THEN 
-                json_build_object('claim_ai_quality', json_build_object(
-                    'was_categorized', false,
-                    'request_time', CURRENT_TIMESTAMP::text,
-                    'response_time', CURRENT_TIMESTAMP::text
-                ))
-            ELSE 
-                "JsonExt"::jsonb || json_build_object('claim_ai_quality', json_build_object(
-                    'was_categorized', false,
-                    'request_time', CURRENT_TIMESTAMP::text,
-                    'response_time', CURRENT_TIMESTAMP::text
-                ))::jsonb
-        END
-    
-    -- Checked claims
-    WHEN "ClaimStatus" = CLAIM_STATUS_CHECKED THEN 
-        CASE 
-            WHEN "JsonExt" IS NULL THEN 
-                json_build_object('claim_ai_quality', json_build_object(
-                    'was_categorized', false,
-                    'request_time', 'None',
-                    'response_time', 'None'
-                ))
-            ELSE 
-                "JsonExt"::jsonb || json_build_object('claim_ai_quality', json_build_object(
-                    'was_categorized', false,
-                    'request_time', 'None',
-                    'response_time', 'None'
-                ))::jsonb
-        END
-    
-    -- Processed or valuated claims
-    WHEN "ClaimStatus" = CLAIM_STATUS_PROCESSED OR "ClaimStatus" = CLAIM_STATUS_VALUATED THEN 
-        CASE 
-            WHEN "JsonExt" IS NULL THEN 
-                json_build_object('claim_ai_quality', json_build_object(
-                    'was_categorized', true,
-                    'request_time', CURRENT_TIMESTAMP::text,
-                    'response_time', CURRENT_TIMESTAMP::text
-                ))
-            ELSE 
-                "JsonExt"::jsonb || json_build_object('claim_ai_quality', json_build_object(
-                    'was_categorized', true,
-                    'request_time', CURRENT_TIMESTAMP::text,
-                    'response_time', CURRENT_TIMESTAMP::text
-                ))::jsonb
-        END
-    
-    -- For ENTERED status, keep as is or initialize with empty JSON
-    WHEN "ClaimStatus" = CLAIM_STATUS_ENTERED AND "JsonExt" IS NULL THEN 
-        '{}'::json
-    
-    -- Otherwise leave unchanged
-    ELSE "JsonExt"
-    END)::json
-WHERE "ValidityTo" IS NULL;
+-- Create new JsonExt for invalid or null entries
 
-END $$;
+UPDATE "tblClaimItems" ci
+SET "JsonExt" = ('{"claim_ai_quality": {"ai_result": "' || "ClaimItemStatus" || '"}}')::jsonb
+WHERE
+  "ValidityTo" IS NULL AND
+  jsonb_typeof("JsonExt"::jsonb) IS NULL;
+
+UPDATE "tblClaimServices" cs
+SET "JsonExt" = ('{"claim_ai_quality": {"ai_result": "' || "ClaimServiceStatus" || '"}}')::jsonb
+WHERE
+  "ValidityTo" IS NULL AND
+  jsonb_typeof("JsonExt"::jsonb) IS NULL;
+
+UPDATE "tblClaim" c
+SET "JsonExt" = (
+  CASE
+    WHEN c."ClaimStatus" = 1 AND c."ValidityFromReview" IS NOT NULL THEN
+      jsonb_build_object(
+        'claim_ai_quality',
+        jsonb_build_object(
+          'was_categorized', true,
+          'request_time', to_char(current_timestamp, 'YYYY-MM-DD"T"HH24:MI:SS'),
+          'response_time', to_char(current_timestamp, 'YYYY-MM-DD"T"HH24:MI:SS')
+        ))
+    WHEN c."ClaimStatus" = 1 AND c."ValidityFromReview" IS NULL THEN
+      jsonb_build_object(
+        'claim_ai_quality',
+        jsonb_build_object(
+          'was_categorized', false,
+          'request_time', to_char(current_timestamp, 'YYYY-MM-DD"T"HH24:MI:SS'),
+          'response_time', to_char(current_timestamp, 'YYYY-MM-DD"T"HH24:MI:SS')
+        ))
+    WHEN c."ClaimStatus" = 2 THEN '{}'::jsonb
+    WHEN c."ClaimStatus" = 4 THEN
+      jsonb_build_object(
+        'claim_ai_quality',
+        jsonb_build_object(
+          'was_categorized', false,
+          'request_time', 'None',
+          'response_time', 'None'
+        ))
+    WHEN c."ClaimStatus" IN (8, 16) THEN
+      jsonb_build_object(
+        'claim_ai_quality',
+        jsonb_build_object(
+          'was_categorized', true,
+          'request_time', to_char(current_timestamp, 'YYYY-MM-DD"T"HH24:MI:SS'),
+          'response_time', to_char(current_timestamp, 'YYYY-MM-DD"T"HH24:MI:SS')
+        ))
+    ELSE '{}'::jsonb
+  END
+)
+WHERE
+  c."ValidityTo" IS NULL AND
+  jsonb_typeof(c."JsonExt"::jsonb) IS NULL;
+
 '''
 
 
