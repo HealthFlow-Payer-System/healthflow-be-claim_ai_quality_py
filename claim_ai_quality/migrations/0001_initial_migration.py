@@ -1,4 +1,8 @@
 from django.db import migrations
+import os
+
+# Get the database type from environment variable
+DB_DEFAULT = os.environ.get('DB_DEFAULT', '').lower()
 
 # MSSQL specific SQL
 MSSQL_MIGRATION_SQL = '''
@@ -203,11 +207,25 @@ class Migration(migrations.Migration):
         ('claim', '0012_item_service_jsonExtField')
     ]
 
-    def database_forwards(self, app_label, schema_editor, from_state, to_state):
-        # Get database engine being used
+    operations = [
+        migrations.RunPython(
+            code=lambda apps, schema_editor: run_database_migration(
+                schema_editor),
+            reverse_code=lambda apps, schema_editor: None
+        )
+    ]
+
+
+def run_database_migration(schema_editor):
+    # Use environment variable if available, otherwise fallback to database vendor detection
+    if DB_DEFAULT == 'postgresql':
+        schema_editor.execute(POSTGRESQL_MIGRATION_SQL)
+    elif DB_DEFAULT == 'mssql':
+        schema_editor.execute(MSSQL_MIGRATION_SQL)
+    else:
+        # Fallback to database vendor detection if DB_DEFAULT is not set or recognized
         db_engine = schema_editor.connection.vendor
 
-        # Run the appropriate SQL based on database engine
         if db_engine == 'microsoft':  # Microsoft SQL Server
             schema_editor.execute(MSSQL_MIGRATION_SQL)
         elif db_engine == 'postgresql':  # PostgreSQL
@@ -217,14 +235,3 @@ class Migration(migrations.Migration):
             # or raise an error for unsupported databases
             raise Exception(
                 f"Database engine {db_engine} not supported by this migration")
-
-    def database_backwards(self, app_label, schema_editor, from_state, to_state):
-        # This migration cannot be reversed
-        pass
-
-    operations = [
-        migrations.RunPython(
-            code=database_forwards,
-            reverse_code=database_backwards
-        )
-    ]
