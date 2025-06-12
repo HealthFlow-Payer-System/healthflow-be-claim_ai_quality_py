@@ -57,9 +57,9 @@ jobs:
         run: |
           pip install -r requirements.txt
       - name: Install openIMIS Modules
-        working-directory: ./openimis/script
+        working-directory: ./openimis
         run: |
-          python modules-requirements.py ../openimis.json > modules-requirements.txt
+          python script/modules-requirements.py openimis.json > modules-requirements.txt
           cat modules-requirements.txt
           pip install -r modules-requirements.txt
       - name: Environment info
