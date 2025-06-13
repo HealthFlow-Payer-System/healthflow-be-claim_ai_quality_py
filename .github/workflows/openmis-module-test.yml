@@ -48,15 +48,18 @@ jobs:
       - name: Update the configuration
         working-directory: ./openimis
         run: |
-          export MODULE_NAME="$(echo $GITHUB_REPOSITORY | sed 's#^openimis/openimis-be-\(.*\)_py$#\1#')"
-          echo "the local module called $MODULE_NAME will be injected in openIMIS .json"
+          MODULE_NAME="$(echo "$GITHUB_REPOSITORY" | sed 's#^openimis/openimis-be-\(.*\)_py$#\1#')"
+          MODULE_REPO="$(basename "$GITHUB_REPOSITORY")"
+          BRANCH="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          REPO="$GITHUB_REPOSITORY"
+      
           jq --arg name "$MODULE_NAME" \
-           --arg pip "git+https://github.com/$REPO.git@$BRANCH#egg=$MODULE_REPO" \
-           '
-           if [.modules[].name == $name] | any
-           then (.modules[] | select(.name == $name) | .pip) = $pip
-           else .modules += [{name: $name, pip: $pip}]
-           end' openimis.json > tmp.json && mv tmp.json openimis.json
+             --arg pip "git+https://github.com/$REPO.git@$BRANCH#egg=$MODULE_REPO" \
+             '
+             if [.modules[].name == $name] | any
+             then (.modules[] | select(.name == $name) | .pip) = $pip
+             else .modules += [{name: $name, pip: $pip}]
+             end' openimis.json > tmp.json && mv tmp.json openimis.json
           cat openimis.json
       - name: Install openIMIS Python dependencies
         working-directory: ./openimis
