@@ -75,6 +75,7 @@ jobs:
         working-directory: ./openimis
         run: |
           pip list
+          printenv
       - name: Initialize DB
         run: |
           /opt/mssql-tools/bin/sqlcmd -S localhost,1433 -U SA -P $SA_PASSWORD -Q 'DROP DATABASE IF EXISTS imis'
