@@ -54,7 +54,7 @@ jobs:
           REPO="$GITHUB_REPOSITORY"
       
           jq --arg name "$MODULE_NAME" \
-             --arg pip "git+https://github.com/$REPO.git@$BRANCH#egg=$MODULE_REPO" \
+             --arg pip "git+https://github.com/$REPO.git@$BRANCH#egg=openimis-be-$MODULE_NAME" \
              '
              if [.modules[].name == $name] | any
              then (.modules[] | select(.name == $name) | .pip) = $pip
