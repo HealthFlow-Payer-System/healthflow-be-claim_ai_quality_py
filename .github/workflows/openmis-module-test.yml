@@ -57,11 +57,10 @@ jobs:
         run: |
           pip install -r requirements.txt
       - name: Install openIMIS Modules
-        working-directory: ./openimis
+        working-directory: ./openimis/script
         run: |
-          python script/modules-requirements.py openimis.json > modules-requirements.txt
+          python modules-requirements.py ../openimis.json > modules-requirements.txt
           cat modules-requirements.txt
-          sed -i 's#^../current-module$#-e ../current-module#' modules-requirements.txt
           pip install -r modules-requirements.txt
       - name: Environment info
         working-directory: ./openimis
