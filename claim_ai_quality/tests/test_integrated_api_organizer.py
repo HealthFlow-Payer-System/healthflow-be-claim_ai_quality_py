@@ -13,9 +13,10 @@ from claim_ai_quality.apps import ClaimAiQualityConfig
 from claim_ai_quality.schema import bind_signals
 from claim_ai_quality.tests.rest_api.utils import ClaimAITestInitialDataGenerator
 from core.models import MutationLog
+from core.models.openimis_graphql_test_case import openIMISGraphQLTestCase
 
 
-class TestRestAIEvaluationOrganizer(ClaimAITestInitialDataGenerator, testcases.TestCase):
+class TestRestAIEvaluationOrganizer(ClaimAITestInitialDataGenerator, openIMISGraphQLTestCase):
 
     @classmethod
     def make_claim_accepted(cls, *args, **kwargs):
@@ -67,8 +68,10 @@ class TestRestAIEvaluationOrganizer(ClaimAITestInitialDataGenerator, testcases.T
     def setUpClass(cls):
         # Signals are not automatically bound in unit tests
         super(TestRestAIEvaluationOrganizer, cls).setUpClass()
-        cls.ai_schema_client = Client(Schema(mutation=claim_ai_schema.Mutation))
-        cls.claim_schema_client = Client(Schema(mutation=claim_schema.Mutation))
+        cls.ai_schema_client = Client(
+            Schema(mutation=claim_ai_schema.Mutation))
+        cls.claim_schema_client = Client(
+            Schema(mutation=claim_schema.Mutation))
         bind_signals()
 
     @skipIf('claim_ai' not in settings.INSTALLED_APPS,
@@ -80,7 +83,8 @@ class TestRestAIEvaluationOrganizer(ClaimAITestInitialDataGenerator, testcases.T
                 self._MUTATION_SEND_CLAIMS_FOR_EVALUATION,
                 context=self.BaseTestContext(self._TEST_USER))
             mutation_id = executed['data']['sendClaimsForAiEvaluation']['clientMutationId']
-            mutation_log = MutationLog.objects.filter(client_mutation_id=mutation_id)
+            mutation_log = MutationLog.objects.filter(
+                client_mutation_id=mutation_id)
             self.assertTrue(mutation_log.exists())
             self._assert_claim_updated()
 
@@ -106,7 +110,8 @@ class TestRestAIEvaluationOrganizer(ClaimAITestInitialDataGenerator, testcases.T
                 self._MUTATION_SUBMIT_CLAIMS,
                 context=self.BaseTestContext(self._TEST_USER))
             mutation_id = executed['data']['submitClaims']['clientMutationId']
-            mutation_log = MutationLog.objects.filter(client_mutation_id=mutation_id)
+            mutation_log = MutationLog.objects.filter(
+                client_mutation_id=mutation_id)
             self.assertTrue(mutation_log.exists())
             self._assert_claim_updated()
 
@@ -132,7 +137,8 @@ class TestRestAIEvaluationOrganizer(ClaimAITestInitialDataGenerator, testcases.T
                 context=self.BaseTestContext(self._TEST_USER)
             )
             mutation_id = executed['data']['submitClaims']['clientMutationId']
-            mutation_log = MutationLog.objects.filter(client_mutation_id=mutation_id)
+            mutation_log = MutationLog.objects.filter(
+                client_mutation_id=mutation_id)
             # Not called as claim is rejected
             self.assertTrue(mutation_log.exists())
             self._assert_claim_not_updated()
@@ -141,10 +147,13 @@ class TestRestAIEvaluationOrganizer(ClaimAITestInitialDataGenerator, testcases.T
         claim = Claim.objects.get(uuid=self._TEST_CLAIM.uuid)
         json_ext = claim.json_ext
         item = list(claim.items.filter(validity_to__isnull=True).all())[0]
-        service = list(claim.services.filter(validity_to__isnull=True).all())[0]
+        service = list(claim.services.filter(
+            validity_to__isnull=True).all())[0]
         self.assertTrue(json_ext['claim_ai_quality']['was_categorized'])
-        self.assertEqual(claim.review_status, Claim.REVIEW_SELECTED)  # One of items rejected
-        self.assertEqual(claim.status, Claim.STATUS_CHECKED)  # Status not changed
+        # One of items rejected
+        self.assertEqual(claim.review_status, Claim.REVIEW_SELECTED)
+        # Status not changed
+        self.assertEqual(claim.status, Claim.STATUS_CHECKED)
         self.assertEqual(item.status, 2)  # Rejected
         self.assertEqual(item.json_ext['claim_ai_quality']['ai_result'], 2)
         self.assertEqual(service.status, 1)  # Accepted
@@ -154,9 +163,11 @@ class TestRestAIEvaluationOrganizer(ClaimAITestInitialDataGenerator, testcases.T
         claim = Claim.objects.get(uuid=self._TEST_CLAIM.uuid)
         json_ext = claim.json_ext
         item = list(claim.items.filter(validity_to__isnull=True).all())[0]
-        service = list(claim.services.filter(validity_to__isnull=True).all())[0]
+        service = list(claim.services.filter(
+            validity_to__isnull=True).all())[0]
         self.assertFalse(json_ext['claim_ai_quality']['was_categorized'])
-        self.assertEqual(claim.status, Claim.STATUS_REJECTED)  # Status not changed
+        # Status not changed
+        self.assertEqual(claim.status, Claim.STATUS_REJECTED)
         self.assertEqual(item.status, 2)  # Rejected
         self.assertEqual(item.json_ext['claim_ai_quality']['ai_result'], 2)
         self.assertEqual(service.status, 2)  # Rejected
