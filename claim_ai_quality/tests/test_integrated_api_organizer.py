@@ -1,22 +1,29 @@
 from unittest import mock, skipIf
-from unittest.mock import PropertyMock, MagicMock
+from unittest.mock import MagicMock, PropertyMock
 
+from claim import schema as claim_schema
+from claim.models import Claim, ClaimItem, ClaimService
+from core.models import MutationLog
+from core.models.openimis_graphql_test_case import BaseTestContext as bc
+from core.models.openimis_graphql_test_case import openIMISGraphQLTestCase
 from django.conf import settings
 from django.test import testcases
 from graphene import Schema
 from graphene.test import Client
 
-from claim import schema as claim_schema
-from claim.models import Claim, ClaimItem, ClaimService
 from claim_ai_quality import schema as claim_ai_schema
 from claim_ai_quality.apps import ClaimAiQualityConfig
 from claim_ai_quality.schema import bind_signals
-from claim_ai_quality.tests.rest_api.utils import ClaimAITestInitialDataGenerator
-from core.models import MutationLog
-from core.models.openimis_graphql_test_case import openIMISGraphQLTestCase
+from claim_ai_quality.tests.rest_api.utils import \
+    ClaimAITestInitialDataGenerator
+from claim_ai_quality.ai_evaluation.rest_organizer import \
+    RestAIEvaluationOrganizer
 
 
 class TestRestAIEvaluationOrganizer(ClaimAITestInitialDataGenerator, openIMISGraphQLTestCase):
+
+    class AnonymousUserContext:
+        user = mock.Mock(is_anonymous=True)
 
     @classmethod
     def make_claim_accepted(cls, *args, **kwargs):
@@ -59,6 +66,7 @@ class TestRestAIEvaluationOrganizer(ClaimAITestInitialDataGenerator, openIMISGra
     class BaseTestContext:
         def __init__(self, user):
             self.user = user
+            self.user_token = bc(user=self.user).get_jwt()
 
     def setUp(self):
         super(TestRestAIEvaluationOrganizer, self).setUp()
@@ -79,9 +87,9 @@ class TestRestAIEvaluationOrganizer(ClaimAITestInitialDataGenerator, openIMISGra
     def test_direct_graphene_call(self):
         with mock.patch('claim_ai.evaluation.predictor.AiPredictor.predict') as mock_:
             mock_.return_value = [1, 0]
-            executed = self.ai_schema_client.execute(
+            executed = self.send_mutation_raw(
                 self._MUTATION_SEND_CLAIMS_FOR_EVALUATION,
-                context=self.BaseTestContext(self._TEST_USER))
+                self.BaseTestContext(self._TEST_USER).user_token)
             mutation_id = executed['data']['sendClaimsForAiEvaluation']['clientMutationId']
             mutation_log = MutationLog.objects.filter(
                 client_mutation_id=mutation_id)
@@ -95,7 +103,8 @@ class TestRestAIEvaluationOrganizer(ClaimAITestInitialDataGenerator, openIMISGra
                 new_callable=PropertyMock)
     @mock.patch("claim_ai.evaluation.preprocessors.v2_preprocessor.AbstractAiInputDataFramePreprocessor.scaler",
                 new_callable=PropertyMock)
-    def test_submit_claim_evaluation(self, mocked_scaler, mocked_encoder, submit):
+    @mock.patch('claim_ai_quality.schema.ClaimEvaluationOrganizer.evaluate_selected_claims', side_effect=RestAIEvaluationOrganizer.evaluate_selected_claims)
+    def test_submit_claim_evaluation(self, send, mocked_scaler, mocked_encoder, submit):
         mocked_scaler.return_value = MagicMock()
         mocked_scaler.return_value.transform = self.mocked_scaler
 
@@ -106,9 +115,10 @@ class TestRestAIEvaluationOrganizer(ClaimAITestInitialDataGenerator, openIMISGra
         with mock.patch('claim_ai.evaluation.predictor.AiPredictor.predict') as mock_:
             mock_.return_value = [1, 0]
             ClaimAiQualityConfig.event_based_activation = True
-            executed = self.claim_schema_client.execute(
+            executed = self.send_mutation_raw(
                 self._MUTATION_SUBMIT_CLAIMS,
-                context=self.BaseTestContext(self._TEST_USER))
+                self.BaseTestContext(self._TEST_USER).user_token,
+                follow=False)
             mutation_id = executed['data']['submitClaims']['clientMutationId']
             mutation_log = MutationLog.objects.filter(
                 client_mutation_id=mutation_id)
@@ -132,9 +142,10 @@ class TestRestAIEvaluationOrganizer(ClaimAITestInitialDataGenerator, openIMISGra
         submit.side_effect = self.make_claim_rejected
         with mock.patch('claim_ai.evaluation.predictor.AiPredictor.predict') as mock_:
             mock_.return_value = [1, 0]
-            executed = self.claim_schema_client.execute(
+            executed = self.send_mutation_raw(
                 self._MUTATION_SUBMIT_CLAIMS,
-                context=self.BaseTestContext(self._TEST_USER)
+                self.BaseTestContext(self._TEST_USER).user_token,
+                follow=False
             )
             mutation_id = executed['data']['submitClaims']['clientMutationId']
             mutation_log = MutationLog.objects.filter(
