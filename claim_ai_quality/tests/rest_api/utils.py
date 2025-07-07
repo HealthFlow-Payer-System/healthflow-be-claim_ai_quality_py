@@ -1,17 +1,20 @@
-from medical.models import Diagnosis
-from medical.test_helpers import create_test_item, create_test_service
-
 from api_fhir_r4.tests import LocationTestMixin, PatientTestMixin
-from api_fhir_r4.utils import TimeUtils, DbManagerUtils
+from api_fhir_r4.utils import DbManagerUtils, TimeUtils
 from claim.models import Claim, ClaimItem, ClaimService
 from claim.test_helpers import create_test_claim_admin
-from claim_ai_quality.apps import ClaimAiQualityConfig
 from core import datetime
 from core.forms import User
-from core.services import create_or_update_interactive_user, create_or_update_core_user
+from core.services import (create_or_update_core_user,
+                           create_or_update_interactive_user)
 from insuree.test_helpers import create_test_insuree
 from location.models import HealthFacility
+from location.test_helpers import (create_test_health_facility,
+                                   create_test_location, create_test_village)
+from medical.models import Diagnosis
+from medical.test_helpers import create_test_item, create_test_service
 from product.test_helpers import create_test_product
+
+from claim_ai_quality.apps import ClaimAiQualityConfig
 
 
 class ClaimAITestInitialDataGenerator:
@@ -121,16 +124,19 @@ class ClaimAITestInitialDataGenerator:
     def mixin_setup(self):
         self._TEST_USER = self.get_or_create_user_api()
         # This user should be created using migration, not available in unit tests by default
-        self._CLAIM_AI_ADMIN = self.get_or_create_user_api(ClaimAiQualityConfig.claim_ai_username)
+        self._CLAIM_AI_ADMIN = self.get_or_create_user_api(
+            ClaimAiQualityConfig.claim_ai_username)
         self.item = create_test_item(
             self._TEST_ITEM_TYPE,
-            custom_props={"code": self._TEST_ITEM_CODE, 'price': self._TEST_ITEM_PRICE, 'care_type': 'O'}
+            custom_props={"code": self._TEST_ITEM_CODE,
+                          'price': self._TEST_ITEM_PRICE, 'care_type': 'O'}
         )
         self.item.uuid = self._TEST_ITEM_UUID
         self.item.save()
         self.service = create_test_service(
             self._TEST_SERVICE_TYPE,
-            custom_props={"code": self._TEST_SERVICE_CODE, 'price': self._TEST_SERVICE_PRICE, 'care_type': 'O'}
+            custom_props={"code": self._TEST_SERVICE_CODE,
+                          'price': self._TEST_SERVICE_PRICE, 'care_type': 'O'}
         )
         self.service.uuid = self._TEST_SERVICE_UUID
         self.service.save()
@@ -138,12 +144,13 @@ class ClaimAITestInitialDataGenerator:
         self._TEST_PRODUCT = self._create_test_product()
         self._TEST_CLAIM = self._create_test_unevaluated_claim()
         self._MUTATION_SEND_CLAIMS_FOR_EVALUATION = \
-            self._GQL_EVALUATION_TEMPLATE % {'claim_uuid': self._TEST_CLAIM.uuid}
+            self._GQL_EVALUATION_TEMPLATE % {
+                'claim_uuid': self._TEST_CLAIM.uuid}
         self._MUTATION_SUBMIT_CLAIMS = \
             self._GQL_SUBMIT_TEMPLATE % {'claim_uuid': self._TEST_CLAIM.uuid}
 
     def _create_test_unevaluated_claim(self):
-        imis_location = PatientTestMixin().create_mocked_location()
+        imis_location = create_test_village()
         imis_location.save()
 
         insuree = create_test_insuree(with_family=True)
@@ -161,13 +168,16 @@ class ClaimAITestInitialDataGenerator:
         historical_claim = self._create_test_claim(insuree, True)
         claim = self._create_test_claim(insuree)
 
-        self._create_items_and_services(historical_claim, self._TEST_PRODUCT, self.item, self.service)
-        item, service = self._create_items_and_services(claim, self._TEST_PRODUCT, self.item, self.service)
+        self._create_items_and_services(
+            historical_claim, self._TEST_PRODUCT, self.item, self.service)
+        item, service = self._create_items_and_services(
+            claim, self._TEST_PRODUCT, self.item, self.service)
         return claim
 
     def _create_items_and_services(self, claim, imis_product, item, service):
         claim_item = self._create_test_claim_item(claim, item, imis_product)
-        claim_service = self._create_test_claim_service(claim, service, imis_product)
+        claim_service = self._create_test_claim_service(
+            claim, service, imis_product)
         return claim_item, claim_service
 
     def _create_test_claim(self, insuree, historical=False):
@@ -180,7 +190,8 @@ class ClaimAITestInitialDataGenerator:
         imis_claim.code = self._TEST_CODE
         imis_claim.status = self._TEST_STATUS
         imis_claim.adjustment = self._TEST_ADJUSTMENT
-        imis_claim.date_processed = TimeUtils.str_to_date(self._TEST_DATE_PROCESSED)
+        imis_claim.date_processed = TimeUtils.str_to_date(
+            self._TEST_DATE_PROCESSED)
         imis_claim.approved = self._TEST_APPROVED
         imis_claim.rejection_reason = self._TEST_REJECTION_REASON
         imis_claim.insuree = insuree
@@ -242,27 +253,13 @@ class ClaimAITestInitialDataGenerator:
         return service
 
     def _create_test_health_facility(self):
-        location = LocationTestMixin().create_test_imis_instance()
-        location.save()
-        hf = HealthFacility()
-        hf.id = self._TEST_HF_ID
-        hf.uuid = self._TEST_HF_UUID
-        hf.code = self._TEST_HF_CODE
-        hf.name = self._TEST_HF_NAME
-        hf.level = self._TEST_HF_LEVEL
-        hf.legal_form_id = self._TEST_HF_LEGAL_FORM
-        hf.address = self._TEST_ADDRESS
-        hf.phone = self._TEST_PHONE
-        hf.fax = self._TEST_FAX
-        hf.email = self._TEST_EMAIL
-        hf.location_id = location.id
-        hf.offline = False
-        hf.audit_user_id = -1
+        hf = create_test_health_facility()
         hf.save()
         return hf
 
     def _create_test_product(self):
-        imis_product = create_test_product(self._TEST_PRODUCT_CODE, valid=True, custom_props=None)
+        imis_product = create_test_product(
+            self._TEST_PRODUCT_CODE, valid=True, custom_props=None)
         imis_product.save()
         return imis_product
 
@@ -278,6 +275,6 @@ class ClaimAITestInitialDataGenerator:
         i_user, i_user_created = create_or_update_interactive_user(
             user_id=None, data=data, audit_user_id=999, connected=False
         )
-        create_or_update_core_user(user_uuid=None, username=username, i_user=i_user)
+        create_or_update_core_user(
+            user_uuid=None, username=username, i_user=i_user)
         return DbManagerUtils.get_object_or_none(User, username=username)
-
